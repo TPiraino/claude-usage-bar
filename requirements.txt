@@ -1,0 +1,5 @@
+# Dependencias Python instalables por pip.
+# OJO: PyGObject (gi), GTK3, AyatanaAppIndicator3 y Secret vienen del SISTEMA
+# (apt), no de pip. Ver README.md / AGENTS.md.
+curl_cffi>=0.6
+cryptography>=41
