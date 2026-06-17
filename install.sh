@@ -14,6 +14,7 @@ python3 -c "import gi" 2>/dev/null || MISSING+=("python3-gi")
 python3 -c "import gi; gi.require_version('Gtk','3.0')" 2>/dev/null || MISSING+=("gir1.2-gtk-3.0")
 python3 -c "import gi; gi.require_version('AyatanaAppIndicator3','0.1')" 2>/dev/null || MISSING+=("gir1.2-ayatanaappindicator3-0.1")
 python3 -c "import gi; gi.require_version('Secret','1')" 2>/dev/null || MISSING+=("gir1.2-secret-1")
+python3 -c "import gi; gi.require_version('Notify','0.7')" 2>/dev/null || MISSING+=("gir1.2-notify-0.7")
 python3 -c "import cryptography" 2>/dev/null || MISSING+=("python3-cryptography")
 
 if [ ${#MISSING[@]} -ne 0 ]; then

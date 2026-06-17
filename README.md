@@ -17,6 +17,16 @@ Ayatana AppIndicator, sin compilar nada.
   y a qué hora resetea.
 - Refresco automático cada 5 minutos (igual al original).
 
+## Características
+
+- 🔁 **Cookie auto-renovable**: si la cookie expira (401), la app la re-extrae
+  sola de Chrome y reintenta — no tenés que hacer nada mientras Chrome siga
+  logueado en claude.ai.
+- 🔔 **Notificaciones** de escritorio al cruzar 80% y 90%.
+- 🔒 **Single-instance**: no se abre dos veces.
+- ⚙️ **Configurable** (`~/.config/claude-usage-bar/config.json`).
+- 🖥️ **CLI** para debug/scripting (`--once`, `--grab`, `--version`).
+
 ## Cómo funciona
 
 Lee el mismo endpoint privado que usa el sitio web:
@@ -42,8 +52,8 @@ git clone https://github.com/TPiraino/claude-usage-bar.git
 cd claude-usage-bar
 
 # 2. Dependencias del sistema (Ubuntu 24.04 ya las trae casi todas)
-sudo apt install python3-gi gir1.2-gtk-3.0 \
-    gir1.2-ayatanaappindicator3-0.1 gir1.2-secret-1 python3-cryptography
+sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
+    gir1.2-secret-1 gir1.2-notify-0.7 python3-cryptography
 
 # 3. Instalar (chequea deps, instala curl_cffi, crea lanzador + autostart)
 ./install.sh
@@ -65,6 +75,34 @@ Repetí esto cuando la cookie expire (ícono gris con `!`).
 **Opción manual:** click en el ícono → **Configurar cookie manualmente** →
 en el navegador logueado en claude.ai, `F12` → **Application** → **Cookies** →
 `https://claude.ai` → copiá el valor de `sessionKey` → pegalo y **Guardar**.
+
+## Configuración (opcional)
+
+Creá `~/.config/claude-usage-bar/config.json` (ver [`config.example.json`](config.example.json)):
+
+```json
+{
+  "refresh_seconds": 300,
+  "warn": 80,
+  "crit": 90,
+  "notifications": true,
+  "auto_grab_on_expiry": true
+}
+```
+
+## CLI
+
+```bash
+claude-usage-bar --once      # imprime el uso actual y sale
+claude-usage-bar --grab      # extrae la cookie de Chrome y la guarda
+claude-usage-bar --version
+```
+
+## Desinstalar
+
+```bash
+./uninstall.sh   # cierra la app, quita autostart/lanzador y borra la cookie del keyring
+```
 
 ## Notas
 

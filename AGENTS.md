@@ -37,8 +37,8 @@ Autenticación por cookie de sesión de claude.ai.
 
 ```bash
 # 1. Dependencias del sistema
-sudo apt install -y python3-gi gir1.2-gtk-3.0 \
-    gir1.2-ayatanaappindicator3-0.1 gir1.2-secret-1 python3-cryptography
+sudo apt install -y python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1 \
+    gir1.2-secret-1 gir1.2-notify-0.7 python3-cryptography
 
 # 2. curl_cffi (vía pip, a nivel usuario)
 python3 -m pip install --user --break-system-packages curl_cffi
@@ -84,24 +84,19 @@ En tiempo de ejecución, el usuario también puede usar el menú →
 
 ## Verificar que funciona (sin mirar la barra)
 
+La forma más rápida es el CLI integrado:
+
 ```bash
-python3 - <<'EOF'
-import importlib.util
-s = importlib.util.spec_from_file_location("cub","claude_usage_bar.py")
-m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
-cookie = m.load_cookie()
-assert cookie, "no hay cookie guardada"
-org = m.fetch_org(cookie)
-data = m.fetch_usage(cookie, org)
-w = m.parse_windows(data)
-assert w, "respuesta sin ventanas de uso"
-for k,v in w.items(): print(f"{k}: {v['util']:.0f}%")
-print("OK")
-EOF
+python3 ./claude_usage_bar.py --once     # imprime cada ventana y su % (exit 0 = OK)
+python3 ./claude_usage_bar.py --grab      # extrae+guarda la cookie de Chrome
+python3 ./claude_usage_bar.py --version
 ```
 
-Status 200 + ventanas con `utilization` = todo bien. Un `UsageError` con
-401/403 = cookie inválida/expirada → re-extraer de Chrome.
+Códigos de salida de `--once`: `0` OK · `2` sin cookie · `3` cookie expirada
+(probá `--grab`) · `4` respuesta sin datos.
+
+Una salida con cada ventana y su `utilization` = todo bien. Nota: desde 1.1.0 la
+app **re-extrae la cookie sola** al recibir 401/403 (config `auto_grab_on_expiry`).
 
 ## Ejecutar
 

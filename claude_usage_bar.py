@@ -10,7 +10,14 @@ Port a Linux del proyecto macOS `claude-usage-bar` (Swift) de @tmatteozzi.
 
 Dependencias del sistema (Ubuntu 24.04):
     python3-gi  gir1.2-gtk-3.0  gir1.2-ayatanaappindicator3-0.1
-    gir1.2-secret-1  python3-requests
+    gir1.2-secret-1  gir1.2-notify-0.7  python3-cryptography
+Dependencias pip (--user): curl_cffi
+
+Uso:
+    claude_usage_bar.py            # corre el indicador
+    claude_usage_bar.py --once     # imprime el uso actual y sale (debug)
+    claude_usage_bar.py --grab     # extrae la cookie de Chrome y sale
+    claude_usage_bar.py --version
 """
 
 import gi
@@ -20,8 +27,21 @@ gi.require_version("AyatanaAppIndicator3", "0.1")
 gi.require_version("Secret", "1")
 from gi.repository import Gtk, GLib, AyatanaAppIndicator3 as AppIndicator, Secret  # noqa: E402
 
+# libnotify es opcional: si no está, se degrada sin notificaciones.
+try:
+    gi.require_version("Notify", "0.7")
+    from gi.repository import Notify  # noqa: E402
+
+    _HAS_NOTIFY = True
+except (ValueError, ImportError):
+    _HAS_NOTIFY = False
+
 import os
+import sys
+import json
+import fcntl
 import threading
+import subprocess
 import datetime as dt
 
 # curl_cffi imita la huella TLS de Chrome -> imprescindible para pasar el
@@ -30,21 +50,44 @@ from curl_cffi import requests as creq
 
 import chrome_cookies
 
+__version__ = "1.1.0"
+
 # ----------------------------------------------------------------------------
 # Configuración
 # ----------------------------------------------------------------------------
 APP_ID = "claude-usage-bar"
+APP_NAME = "Claude Usage Bar"
 ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
-
-REFRESH_SECONDS = 5 * 60  # igual al original: 5 minutos
-HTTP_TIMEOUT = 20
+USAGE_URL = "https://claude.ai/settings/usage"
 
 BASE = "https://claude.ai/api"
 IMPERSONATE = "chrome"  # perfil TLS/HTTP2 que usa curl_cffi
+HTTP_TIMEOUT = 20
 
-# Umbrales de color (igual al original)
-WARN = 80
-CRIT = 90
+CONFIG_DIR = os.path.expanduser("~/.config/claude-usage-bar")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+DEFAULTS = {
+    "refresh_seconds": 300,        # cada cuánto consulta la API
+    "warn": 80,                    # umbral amarillo
+    "crit": 90,                    # umbral rojo
+    "notifications": True,         # avisar al cruzar warn/crit
+    "auto_grab_on_expiry": True,   # re-extraer cookie de Chrome si expira
+}
+
+
+def load_config():
+    cfg = dict(DEFAULTS)
+    try:
+        with open(CONFIG_PATH) as f:
+            cfg.update({k: v for k, v in json.load(f).items() if k in DEFAULTS})
+    except FileNotFoundError:
+        pass
+    except Exception as e:  # noqa: BLE001
+        print("config inválida, usando defaults:", e)
+    return cfg
+
+
+CONFIG = load_config()
 
 # Almacenamiento seguro de la cookie en GNOME Keyring (vía libsecret)
 SECRET_SCHEMA = Secret.Schema.new(
@@ -67,12 +110,8 @@ def load_cookie():
 
 def save_cookie(cookie):
     Secret.password_store_sync(
-        SECRET_SCHEMA,
-        SECRET_ATTRS,
-        Secret.COLLECTION_DEFAULT,
-        "Claude.ai session cookie",
-        cookie,
-        None,
+        SECRET_SCHEMA, SECRET_ATTRS, Secret.COLLECTION_DEFAULT,
+        "Claude.ai session cookie", cookie, None,
     )
 
 
@@ -82,11 +121,8 @@ def normalize_cookie(text):
     text = (text or "").strip()
     if not text:
         return ""
-    # quita un prefijo 'cookie:' / 'Cookie:' si lo copiaron del DevTools
-    low = text.lower()
-    if low.startswith("cookie:"):
+    if text.lower().startswith("cookie:"):
         text = text[len("cookie:"):].strip()
-    # si no hay ningún 'clave=valor', asumimos que es el token de sessionKey
     if "=" not in text:
         return "sessionKey=" + text
     return text
@@ -107,7 +143,11 @@ def cookie_value(name, cookie):
 # Cliente de la API de uso
 # ----------------------------------------------------------------------------
 class UsageError(Exception):
-    pass
+    """Error genérico de la API."""
+
+
+class AuthError(UsageError):
+    """Cookie inválida o expirada (401/403)."""
 
 
 def _headers(cookie):
@@ -115,7 +155,7 @@ def _headers(cookie):
         "Cookie": cookie,
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://claude.ai/settings/usage",
+        "Referer": USAGE_URL,
     }
 
 
@@ -124,7 +164,7 @@ def _get(url, cookie):
         url, headers=_headers(cookie), impersonate=IMPERSONATE, timeout=HTTP_TIMEOUT
     )
     if r.status_code in (401, 403):
-        raise UsageError("Cookie inválida o expirada (401/403)")
+        raise AuthError("Cookie inválida o expirada (401/403)")
     if r.status_code != 200:
         raise UsageError(f"HTTP {r.status_code}")
     return r.json()
@@ -148,7 +188,6 @@ def fetch_usage(cookie, org):
 
 
 def _first(d, *keys):
-    """Devuelve el primer key presente (alias del endpoint cambian)."""
     for k in keys:
         if isinstance(d, dict) and k in d and d[k] is not None:
             return d[k]
@@ -169,7 +208,6 @@ def parse_windows(data):
 
     take("session", "five_hour", "session", "current_session")
     take("weekly", "seven_day", "weekly", "week")
-    take("weekly_sonnet", "seven_day_sonnet", "weekly_sonnet")
     take("weekly_opus", "seven_day_opus", "weekly_opus")
     return out
 
@@ -178,27 +216,35 @@ def parse_windows(data):
 # Helpers de presentación
 # ----------------------------------------------------------------------------
 def color_dot(util):
-    if util >= CRIT:
+    if util >= CONFIG["crit"]:
         return "🔴"
-    if util >= WARN:
+    if util >= CONFIG["warn"]:
         return "🟡"
     return "🟢"
 
 
 def status_color(util):
-    if util >= CRIT:
+    if util >= CONFIG["crit"]:
         return "red"
-    if util >= WARN:
+    if util >= CONFIG["warn"]:
         return "yellow"
     return "green"
+
+
+def level(util):
+    """0 = normal, 1 = warn, 2 = crit. Para decidir notificaciones."""
+    if util >= CONFIG["crit"]:
+        return 2
+    if util >= CONFIG["warn"]:
+        return 1
+    return 0
 
 
 def fmt_reset(iso):
     if not iso:
         return ""
     try:
-        s = iso.replace("Z", "+00:00")
-        t = dt.datetime.fromisoformat(s).astimezone()
+        t = dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
         now = dt.datetime.now().astimezone()
         if t.date() == now.date():
             return "reset " + t.strftime("%H:%M")
@@ -215,23 +261,24 @@ class ClaudeUsageBar:
         self.cookie = load_cookie()
         self.org = None
         self._busy = False
+        self._last_level = 0  # para no spamear notificaciones
+
+        if _HAS_NOTIFY and CONFIG["notifications"]:
+            Notify.init(APP_NAME)
 
         self.indicator = AppIndicator.Indicator.new_with_path(
-            APP_ID,
-            "claude-usage-gray",
-            AppIndicator.IndicatorCategory.SYSTEM_SERVICES,
-            ICON_DIR,
+            APP_ID, "claude-usage-gray",
+            AppIndicator.IndicatorCategory.SYSTEM_SERVICES, ICON_DIR,
         )
         self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
-        self.indicator.set_title("Claude Usage")
+        self.indicator.set_title(APP_NAME)
 
         self.menu = Gtk.Menu()
         self._build_menu([])
         self.indicator.set_menu(self.menu)
 
-        # Primer refresh + timer periódico
         GLib.timeout_add_seconds(2, self._kick)
-        GLib.timeout_add_seconds(REFRESH_SECONDS, self._tick)
+        GLib.timeout_add_seconds(CONFIG["refresh_seconds"], self._tick)
 
     # --- construcción del menú -------------------------------------------
     def _build_menu(self, rows, footer=None):
@@ -251,6 +298,7 @@ class ClaudeUsageBar:
             self._add_item(footer, None, enabled=False)
             self._sep()
         self._add_item("🔄  Actualizar ahora", self.on_refresh)
+        self._add_item("🌐  Abrir uso en el navegador", self.on_open_usage)
         self._add_item("🍪  Traer cookie de Chrome", self.on_grab_chrome)
         self._add_item("🔑  Configurar cookie manualmente…", self.on_set_cookie)
         self._sep()
@@ -271,12 +319,12 @@ class ClaudeUsageBar:
     # --- refresco ---------------------------------------------------------
     def _kick(self):
         self._tick()
-        return False  # one-shot
+        return False
 
     def _tick(self):
         if not self._busy:
             threading.Thread(target=self._refresh_worker, daemon=True).start()
-        return True  # mantener el timer
+        return True
 
     def _refresh_worker(self):
         self._busy = True
@@ -286,21 +334,40 @@ class ClaudeUsageBar:
                 GLib.idle_add(self._set_label, "")
                 GLib.idle_add(self._build_menu, [])
                 return
-            # estado "cargando": logo Claude mientras consulta
             GLib.idle_add(self._set_icon, "claude")
             GLib.idle_add(self._set_label, "…")
-            if not self.org:
-                self.org = fetch_org(self.cookie)
-            data = fetch_usage(self.cookie, self.org)
-            windows = parse_windows(data)
+            windows = self._fetch_with_auto_grab()
             GLib.idle_add(self._apply, windows)
-        except UsageError as e:
+        except AuthError as e:
             self.org = None
             GLib.idle_add(self._error, str(e))
+        except chrome_cookies.ChromeCookieError as e:
+            GLib.idle_add(self._error, f"Cookie: {e}")
         except Exception as e:  # noqa: BLE001
             GLib.idle_add(self._error, f"Error: {e}")
         finally:
             self._busy = False
+
+    def _fetch_with_auto_grab(self):
+        """Consulta la API; si la cookie expiró, intenta re-extraerla de Chrome
+        una vez y reintenta automáticamente."""
+        try:
+            if not self.org:
+                self.org = fetch_org(self.cookie)
+            return parse_windows(fetch_usage(self.cookie, self.org))
+        except AuthError:
+            if not CONFIG["auto_grab_on_expiry"]:
+                raise
+            # un solo reintento re-extrayendo la cookie de Chrome
+            cookie = chrome_cookies.get_claude_cookie()
+            self.cookie = cookie
+            self.org = None
+            try:
+                save_cookie(cookie)
+            except Exception:  # noqa: BLE001
+                pass
+            self.org = fetch_org(self.cookie)
+            return parse_windows(fetch_usage(self.cookie, self.org))
 
     def _apply(self, windows):
         if not windows:
@@ -314,10 +381,10 @@ class ClaudeUsageBar:
         }
         rows = []
         worst = 0.0
+        worst_label = ""
         for key in ("session", "weekly", "weekly_opus"):
             w = windows.get(key)
             if not w:
-                # mostramos la fila igual aunque el endpoint no la traiga
                 if key == "weekly_opus":
                     rows.append("⚪  Semanal Opus: sin datos")
                 continue
@@ -325,15 +392,32 @@ class ClaudeUsageBar:
             reset = fmt_reset(w.get("resets_at"))
             tail = f" · {reset}" if reset else ""
             rows.append(f"{color_dot(util)}  {labels[key]}: {util:.0f}%{tail}")
-            worst = max(worst, util)
+            if util >= worst:
+                worst, worst_label = util, labels[key]
 
         now = dt.datetime.now().strftime("%H:%M")
         self._build_menu(rows, footer=f"Actualizado {now}")
-
-        # la barra muestra el uso MÁS ALTO (el límite que más cerca tenés)
         self._set_icon(status_color(worst))
         self._set_label(f"{worst:.0f}%")
+        self.indicator.set_title(f"{APP_NAME} — {worst_label} {worst:.0f}%")
+        self._maybe_notify(worst, worst_label)
         return False
+
+    def _maybe_notify(self, worst, worst_label):
+        lvl = level(worst)
+        if lvl > self._last_level and lvl > 0 and _HAS_NOTIFY and CONFIG["notifications"]:
+            urgency = "crítico" if lvl == 2 else "alto"
+            icon = os.path.join(ICON_DIR, f"claude-usage-{status_color(worst)}.svg")
+            try:
+                n = Notify.Notification.new(
+                    f"Uso de Claude {urgency}: {worst:.0f}%",
+                    f"{worst_label} alcanzó {worst:.0f}%.",
+                    icon,
+                )
+                n.show()
+            except Exception:  # noqa: BLE001
+                pass
+        self._last_level = lvl
 
     def _error(self, msg):
         self._set_icon("gray")
@@ -344,7 +428,7 @@ class ClaudeUsageBar:
 
     # --- indicador --------------------------------------------------------
     def _set_icon(self, color):
-        self.indicator.set_icon_full(f"claude-usage-{color}", "Claude Usage")
+        self.indicator.set_icon_full(f"claude-usage-{color}", APP_NAME)
         return False
 
     def _set_label(self, text):
@@ -355,8 +439,13 @@ class ClaudeUsageBar:
     def on_refresh(self, _):
         self._tick()
 
+    def on_open_usage(self, _):
+        try:
+            subprocess.Popen(["xdg-open", USAGE_URL])
+        except Exception as e:  # noqa: BLE001
+            print("no se pudo abrir el navegador:", e)
+
     def on_grab_chrome(self, _):
-        """Extrae la cookie de claude.ai directamente de Chrome y refresca."""
         self._set_label("…")
         threading.Thread(target=self._grab_chrome_worker, daemon=True).start()
 
@@ -392,11 +481,10 @@ class ClaudeUsageBar:
         info.set_xalign(0)
         info.set_line_wrap(True)
         info.set_markup(
-            "Pegá el <b>header Cookie completo</b> de una pestaña logueada en "
-            "claude.ai.\n\n"
-            "Cómo obtenerlo: DevTools (F12) → pestaña <b>Network</b> → recargá → "
-            "click en cualquier request a claude.ai → <b>Headers</b> → copiá el "
-            "valor de <tt>cookie:</tt> (debe contener <tt>sessionKey</tt>).\n"
+            "Lo más fácil es <b>🍪 Traer cookie de Chrome</b>. Si preferís a mano:\n"
+            "DevTools (F12) → <b>Application</b> → <b>Cookies</b> → "
+            "<tt>https://claude.ai</tt> → copiá el valor de <tt>sessionKey</tt> "
+            "(o el header Cookie completo) y pegalo acá.\n"
             "Se guarda cifrado en tu GNOME Keyring."
         )
         box.add(info)
@@ -427,13 +515,78 @@ class ClaudeUsageBar:
         dialog.destroy()
 
 
+# ----------------------------------------------------------------------------
+# Single-instance + CLI
+# ----------------------------------------------------------------------------
+def acquire_single_instance():
+    """Evita múltiples instancias. Devuelve el file handle del lock (hay que
+    mantenerlo vivo) o None si ya hay otra corriendo."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+    lock_path = os.path.join(runtime, "claude-usage-bar.lock")
+    fh = open(lock_path, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return None
+    fh.write(str(os.getpid()))
+    fh.flush()
+    return fh
+
+
+def cli_once():
+    """Imprime el uso actual y sale (debug / scripting)."""
+    cookie = load_cookie()
+    if not cookie:
+        print("No hay cookie guardada. Usá --grab o configurala desde la app.")
+        return 2
+    try:
+        org = fetch_org(cookie)
+        windows = parse_windows(fetch_usage(cookie, org))
+    except AuthError:
+        print("Cookie expirada (401/403). Probá --grab.")
+        return 3
+    if not windows:
+        print("Respuesta sin datos de uso.")
+        return 4
+    for k, v in windows.items():
+        print(f"{k:14s} {v['util']:5.1f}%   {fmt_reset(v.get('resets_at'))}")
+    return 0
+
+
+def cli_grab():
+    """Extrae la cookie de Chrome, la guarda y sale."""
+    try:
+        cookie = chrome_cookies.get_claude_cookie()
+    except chrome_cookies.ChromeCookieError as e:
+        print("No se pudo extraer la cookie de Chrome:", e)
+        return 5
+    save_cookie(cookie)
+    print(f"Cookie guardada ({len(cookie.split(';'))} cookies).")
+    return 0
+
+
 def main():
-    app = ClaudeUsageBar()
+    args = sys.argv[1:]
+    if "--version" in args:
+        print(f"{APP_NAME} {__version__}")
+        return 0
+    if "--once" in args:
+        return cli_once()
+    if "--grab" in args:
+        return cli_grab()
+
+    lock = acquire_single_instance()
+    if lock is None:
+        print("Ya hay una instancia corriendo.")
+        return 0
+
+    ClaudeUsageBar()
     try:
         Gtk.main()
     except KeyboardInterrupt:
         pass
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

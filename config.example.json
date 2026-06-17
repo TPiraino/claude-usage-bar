@@ -1,0 +1,7 @@
+{
+  "refresh_seconds": 300,
+  "warn": 80,
+  "crit": 90,
+  "notifications": true,
+  "auto_grab_on_expiry": true
+}
