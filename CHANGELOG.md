@@ -2,6 +2,9 @@
 
 ## Unreleased (rama `feat/cookie-multi-browser`)
 
+- La barra muestra por defecto el `%` de la **sesión de 5h** (config `bar_metric`,
+  `"session"` o `"highest"`). El color del ícono sigue reflejando el límite más alto.
+
 - **Extracción de cookie multi-navegador** (`browser_cookies.py`):
   - Chrome / Chromium / Brave / Edge: descifrado AES con **autodetección de la
     clave** (prueba passwords del keyring hasta que el `sessionKey` valida).

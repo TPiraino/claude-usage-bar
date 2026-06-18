@@ -75,6 +75,7 @@ DEFAULTS = {
     "auto_grab_on_expiry": True,   # re-extraer cookie del navegador si expira
     "browser": None,               # None = autodetectar; o "chrome"/"chromium"/"firefox"/...
     "profile": None,               # None = perfil más reciente; o nombre/substring del perfil
+    "bar_metric": "session",       # qué % muestra la barra: "session" o "highest"
 }
 
 
@@ -398,11 +399,19 @@ class ClaudeUsageBar:
             if util >= worst:
                 worst, worst_label = util, labels[key]
 
+        # qué número va en la barra: "session" (default) o "highest"
+        shown, shown_label = worst, worst_label
+        if CONFIG["bar_metric"] == "session" and "session" in windows:
+            shown, shown_label = windows["session"]["util"], labels["session"]
+
         now = dt.datetime.now().strftime("%H:%M")
         self._build_menu(rows, footer=f"Actualizado {now}")
+        # número = métrica elegida; color del ícono = el límite más alto (aviso)
         self._set_icon(status_color(worst))
-        self._set_label(f"{worst:.0f}%")
-        self.indicator.set_title(f"{APP_NAME} — {worst_label} {worst:.0f}%")
+        self._set_label(f"{shown:.0f}%")
+        self.indicator.set_title(
+            f"{APP_NAME} — {shown_label} {shown:.0f}% · máx {worst_label} {worst:.0f}%"
+        )
         self._maybe_notify(worst, worst_label)
         return False
 

@@ -94,9 +94,15 @@ Creá `~/.config/claude-usage-bar/config.json` (ver [`config.example.json`](conf
   "crit": 90,
   "notifications": true,
   "auto_grab_on_expiry": true,
-  "browser": null
+  "browser": null,
+  "profile": null,
+  "bar_metric": "session"
 }
 ```
+
+`bar_metric`: qué `%` muestra la barra — `"session"` (la ventana de 5h, default)
+o `"highest"` (el límite más alto). El color del ícono siempre refleja el límite
+más alto, para avisarte aunque la barra muestre la sesión.
 
 `browser`: `null` autodetecta; o `"chrome"` / `"chromium"` / `"brave"` / `"edge"` / `"firefox"`.
 `profile`: `null` usa el perfil más reciente; o el nombre del perfil (exacto o

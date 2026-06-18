@@ -5,5 +5,6 @@
   "notifications": true,
   "auto_grab_on_expiry": true,
   "browser": null,
-  "profile": null
+  "profile": null,
+  "bar_metric": "session"
 }
