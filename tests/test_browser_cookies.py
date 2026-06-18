@@ -7,6 +7,7 @@ Correr:  python3 -m pytest tests/ -q     (o)     python3 -m unittest -v
 
 import os
 import sys
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -106,6 +107,41 @@ class ChromiumTest(unittest.TestCase):
         _make_chromium_db(self.db, [("cf_clearance", "abc")])
         with self.assertRaises(bc.BrowserCookieError):
             bc.get_claude_cookie("chrome")
+
+
+class ProfileSelectionTest(unittest.TestCase):
+    """Dos perfiles de Firefox; selecciona el correcto por nombre/substring."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.default = os.path.join(self.dir, "aaa.default", "cookies.sqlite")
+        self.release = os.path.join(self.dir, "bbb.default-release", "cookies.sqlite")
+        for p in (self.default, self.release):
+            os.makedirs(os.path.dirname(p))
+        _make_firefox_db(self.default, [("sessionKey", SESSION + "-DEFAULT")])
+        _make_firefox_db(self.release, [("sessionKey", SESSION + "-RELEASE")])
+        self._globs = bc.FIREFOX_GLOBS
+        bc.FIREFOX_GLOBS = [os.path.join(self.dir, "*", "cookies.sqlite")]
+
+    def tearDown(self):
+        bc.FIREFOX_GLOBS = self._globs
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_select_by_substring(self):
+        cookie = bc.get_claude_cookie("firefox", profile="release")
+        self.assertIn(SESSION + "-RELEASE", cookie)
+
+    def test_select_by_exact_name(self):
+        cookie = bc.get_claude_cookie("firefox", profile="aaa.default")
+        self.assertIn(SESSION + "-DEFAULT", cookie)
+
+    def test_unknown_profile_raises(self):
+        with self.assertRaises(bc.BrowserCookieError):
+            bc.get_claude_cookie("firefox", profile="nope")
+
+    def test_lists_all_profiles(self):
+        names = {s["profile"] for s in bc.list_sources() if s["browser"] == "firefox"}
+        self.assertEqual(names, {"aaa.default", "bbb.default-release"})
 
 
 class AutodetectTest(unittest.TestCase):

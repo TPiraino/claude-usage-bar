@@ -89,8 +89,8 @@ La forma más rápida es el CLI integrado:
 
 ```bash
 python3 ./claude_usage_bar.py --once            # imprime cada ventana y su % (exit 0 = OK)
-python3 ./claude_usage_bar.py --grab [--browser X]  # extrae+guarda la cookie del navegador
-python3 ./claude_usage_bar.py --list-browsers   # navegadores detectados + estado
+python3 ./claude_usage_bar.py --grab [--browser X] [--profile P]  # extrae+guarda la cookie
+python3 ./claude_usage_bar.py --list-browsers   # navegadores/perfiles detectados + estado
 python3 ./claude_usage_bar.py --version
 ```
 

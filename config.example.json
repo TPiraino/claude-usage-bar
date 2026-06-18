@@ -4,5 +4,6 @@
   "crit": 90,
   "notifications": true,
   "auto_grab_on_expiry": true,
-  "browser": null
+  "browser": null,
+  "profile": null
 }

@@ -14,10 +14,10 @@ Dependencias del sistema (Ubuntu 24.04):
 Dependencias pip (--user): curl_cffi
 
 Uso:
-    claude_usage_bar.py                      # corre el indicador
-    claude_usage_bar.py --once               # imprime el uso actual y sale (debug)
-    claude_usage_bar.py --grab [--browser X] # extrae la cookie del navegador y sale
-    claude_usage_bar.py --list-browsers      # navegadores detectados + estado de sesión
+    claude_usage_bar.py                                  # corre el indicador
+    claude_usage_bar.py --once                           # imprime el uso y sale (debug)
+    claude_usage_bar.py --grab [--browser X] [--profile P]  # extrae la cookie y sale
+    claude_usage_bar.py --list-browsers                  # navegadores/perfiles detectados
     claude_usage_bar.py --version
 """
 
@@ -74,6 +74,7 @@ DEFAULTS = {
     "notifications": True,         # avisar al cruzar warn/crit
     "auto_grab_on_expiry": True,   # re-extraer cookie del navegador si expira
     "browser": None,               # None = autodetectar; o "chrome"/"chromium"/"firefox"/...
+    "profile": None,               # None = perfil más reciente; o nombre/substring del perfil
 }
 
 
@@ -361,7 +362,7 @@ class ClaudeUsageBar:
             if not CONFIG["auto_grab_on_expiry"]:
                 raise
             # un solo reintento re-extrayendo la cookie de Chrome
-            cookie = browser_cookies.get_claude_cookie(CONFIG["browser"])
+            cookie = browser_cookies.get_claude_cookie(CONFIG["browser"], CONFIG["profile"])
             self.cookie = cookie
             self.org = None
             try:
@@ -453,7 +454,7 @@ class ClaudeUsageBar:
 
     def _grab_chrome_worker(self):
         try:
-            cookie = browser_cookies.get_claude_cookie(CONFIG["browser"])
+            cookie = browser_cookies.get_claude_cookie(CONFIG["browser"], CONFIG["profile"])
             self.cookie = cookie
             self.org = None
             try:
@@ -555,10 +556,12 @@ def cli_once():
     return 0
 
 
-def cli_grab(browser=None):
+def cli_grab(browser=None, profile=None):
     """Extrae la cookie del navegador, la guarda y sale."""
     try:
-        cookie = browser_cookies.get_claude_cookie(browser or CONFIG["browser"])
+        cookie = browser_cookies.get_claude_cookie(
+            browser or CONFIG["browser"], profile or CONFIG["profile"]
+        )
     except browser_cookies.BrowserCookieError as e:
         print("No se pudo extraer la cookie:", e)
         return 5
@@ -568,13 +571,13 @@ def cli_grab(browser=None):
 
 
 def cli_list_browsers():
-    """Lista los navegadores detectados y si tienen sesión de claude.ai."""
+    """Lista los navegadores/perfiles detectados y si tienen sesión de claude.ai."""
     sources = browser_cookies.list_sources()
     if not sources:
         print("No detecté ningún navegador con base de cookies.")
         return 6
     for s in sources:
-        print(f"{s['browser']:9s} {s['status']:42s} {s['db']}")
+        print(f"{s['browser']:9s} {s['profile']:24s} {s['status']:42s} {s['db']}")
     return 0
 
 
@@ -598,7 +601,7 @@ def main():
     if "--once" in args:
         return cli_once()
     if "--grab" in args:
-        return cli_grab(_arg_value(args, "--browser"))
+        return cli_grab(_arg_value(args, "--browser"), _arg_value(args, "--profile"))
 
     lock = acquire_single_instance()
     if lock is None:

@@ -8,6 +8,8 @@
   - Firefox (incluido snap/flatpak): lee `moz_cookies` en texto plano.
   - Fallback `--password-store=basic` (clave `peanuts`).
 - Config `browser` + flags `--browser` y `--list-browsers`.
+- **Selección de perfil**: config `profile` / flag `--profile` (match exacto o
+  substring); `--list-browsers` lista todos los perfiles con su estado.
 - `chrome_cookies.py` queda como shim de compatibilidad.
 - Tests (`tests/test_browser_cookies.py`) con SQLite mockeado.
 

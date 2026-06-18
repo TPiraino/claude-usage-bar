@@ -27,9 +27,10 @@ quedó como shim). Estado:
 - [x] Mensajes de error por caso (no hay cookies / no logueado / no se pudo
   descifrar / navegador no soportado).
 - [x] Tests con SQLite mockeado (Firefox plano + Chromium cifrado).
+- [x] Selección de **perfil** dentro de un navegador (config `profile` / flag
+  `--profile`, match exacto o substring; `--list-browsers` lista todos).
 - [ ] Probar Brave/Edge en una máquina real (hoy solo verificado Chrome+Firefox).
 - [ ] Soportar **KDE / kwallet** como backend de la clave (no solo libsecret).
-- [ ] Selección de **perfil** dentro de un navegador (hoy usa el más reciente).
 
 ## Calidad / distribución
 

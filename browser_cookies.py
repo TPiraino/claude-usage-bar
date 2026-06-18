@@ -80,15 +80,38 @@ FIREFOX_GLOBS = [
 PREFERENCE_ORDER = ["chrome", "chromium", "brave", "edge", "firefox"]
 
 
-def _expand_first(globs):
-    """Primer archivo existente de una lista de globs (el más reciente)."""
+def _profile_name(db_path):
+    """Nombre del perfil = carpeta que contiene la base de cookies
+    (ej. 'Default', 'Profile 1', '72z3jl8j.default-release')."""
+    return os.path.basename(os.path.dirname(db_path))
+
+
+def _list_dbs(globs):
+    """Devuelve [(perfil, db_path), ...] ordenado por mtime descendente."""
     hits = []
     for pattern in globs:
         hits += glob.glob(os.path.expanduser(pattern))
     hits = [h for h in hits if os.path.isfile(h)]
-    if not hits:
+    hits.sort(key=os.path.getmtime, reverse=True)
+    return [(_profile_name(h), h) for h in hits]
+
+
+def _select_db(globs, profile=None):
+    """Elige una base de cookies: por `profile` (match exacto, luego substring,
+    case-insensitive) o, si no se pide, la más reciente."""
+    dbs = _list_dbs(globs)
+    if not dbs:
         return None
-    return max(hits, key=os.path.getmtime)
+    if not profile:
+        return dbs[0][1]
+    low = profile.lower()
+    for name, path in dbs:
+        if name.lower() == low:
+            return path
+    for name, path in dbs:
+        if low in name.lower():
+            return path
+    return None
 
 
 def _query_db(path, sql, params=()):
@@ -179,10 +202,12 @@ def _decrypt(blob, key):
     return dec.decode("utf-8", "replace")
 
 
-def _extract_chromium(browser):
+def _extract_chromium(browser, profile=None):
     spec = CHROMIUM_BROWSERS[browser]
-    db = _expand_first(spec["globs"])
+    db = _select_db(spec["globs"], profile)
     if not db:
+        if profile:
+            raise BrowserCookieError(f"{browser}: no encontré el perfil '{profile}'")
         raise BrowserCookieError(f"{browser}: no encontré la base de cookies")
 
     rows = _query_db(
@@ -219,9 +244,11 @@ def _extract_chromium(browser):
 # ----------------------------------------------------------------------------
 # Firefox (texto plano)
 # ----------------------------------------------------------------------------
-def _extract_firefox(_browser="firefox"):
-    db = _expand_first(FIREFOX_GLOBS)
+def _extract_firefox(profile=None):
+    db = _select_db(FIREFOX_GLOBS, profile)
     if not db:
+        if profile:
+            raise BrowserCookieError(f"firefox: no encontré el perfil '{profile}'")
         raise BrowserCookieError("firefox: no encontré el perfil / cookies.sqlite")
     rows = _query_db(
         db, "SELECT name, value FROM moz_cookies WHERE host LIKE '%claude.ai'"
@@ -236,25 +263,27 @@ def _extract_firefox(_browser="firefox"):
 # ----------------------------------------------------------------------------
 # API pública
 # ----------------------------------------------------------------------------
-def _extract(browser):
+def _extract(browser, profile=None):
     if browser == "firefox":
-        return _extract_firefox()
+        return _extract_firefox(profile)
     if browser in CHROMIUM_BROWSERS:
-        return _extract_chromium(browser)
+        return _extract_chromium(browser, profile)
     raise BrowserCookieError(f"navegador no soportado: {browser}")
 
 
-def get_claude_cookie(browser=None):
+def get_claude_cookie(browser=None, profile=None):
     """Devuelve el header Cookie completo de claude.ai.
 
-    Si `browser` es None, prueba los navegadores en orden de preferencia y se
-    queda con el primero que tenga una sesión válida de claude.ai.
+    - `browser` None → prueba los navegadores en orden de preferencia y se queda
+      con el primero que tenga una sesión válida.
+    - `profile` selecciona un perfil concreto (nombre exacto o substring); si es
+      None se usa el perfil más reciente de cada navegador.
     """
     candidates = [browser] if browser else PREFERENCE_ORDER
     errors = []
     for b in candidates:
         try:
-            return _extract(b)
+            return _extract(b, profile)
         except BrowserCookieError as e:
             errors.append(str(e))
     detail = "; ".join(errors) if errors else "ningún navegador disponible"
@@ -264,22 +293,20 @@ def get_claude_cookie(browser=None):
 
 
 def list_sources():
-    """Lista los navegadores con base de cookies presente y si tienen sesión."""
+    """Lista cada navegador/perfil con base de cookies presente y si tiene sesión."""
     out = []
     for b in PREFERENCE_ORDER:
         globs = FIREFOX_GLOBS if b == "firefox" else CHROMIUM_BROWSERS[b]["globs"]
-        db = _expand_first(globs)
-        if not db:
-            continue
-        try:
-            _extract(b)
-            status = "sesión OK"
-        except BrowserCookieError as e:
-            status = str(e).split(":", 1)[-1].strip()
-        out.append({"browser": b, "db": db, "status": status})
+        for profile, db in _list_dbs(globs):
+            try:
+                _extract(b, profile)
+                status = "sesión OK"
+            except BrowserCookieError as e:
+                status = str(e).split(":", 1)[-1].strip()
+            out.append({"browser": b, "profile": profile, "db": db, "status": status})
     return out
 
 
 if __name__ == "__main__":
     for src in list_sources():
-        print(f"{src['browser']:9s} {src['status']:40s} {src['db']}")
+        print(f"{src['browser']:9s} {src['profile']:24s} {src['status']:40s} {src['db']}")

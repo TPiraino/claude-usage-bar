@@ -99,13 +99,16 @@ Creá `~/.config/claude-usage-bar/config.json` (ver [`config.example.json`](conf
 ```
 
 `browser`: `null` autodetecta; o `"chrome"` / `"chromium"` / `"brave"` / `"edge"` / `"firefox"`.
+`profile`: `null` usa el perfil más reciente; o el nombre del perfil (exacto o
+substring), ej. `"Default"`, `"Profile 1"`, `"default-release"`. Mirá los tuyos
+con `claude-usage-bar --list-browsers`.
 
 ## CLI
 
 ```bash
-claude-usage-bar --once               # imprime el uso actual y sale
-claude-usage-bar --grab [--browser X] # extrae la cookie del navegador y la guarda
-claude-usage-bar --list-browsers      # navegadores detectados + estado de sesión
+claude-usage-bar --once                            # imprime el uso actual y sale
+claude-usage-bar --grab [--browser X] [--profile P] # extrae la cookie y la guarda
+claude-usage-bar --list-browsers                   # navegadores/perfiles + estado de sesión
 claude-usage-bar --version
 ```
 
