@@ -63,7 +63,7 @@ claude-usage-bar
 ```
 
 > Para una instalación asistida por un agente (Claude Code u otro), ver
-> [`AGENTS.md`](AGENTS.md).
+> [`AGENTS.md`](AGENTS.md). Ideas y mejoras pendientes en [`ROADMAP.md`](ROADMAP.md).
 
 ## Configurar la cookie
 
