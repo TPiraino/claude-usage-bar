@@ -9,24 +9,28 @@ esfuerzo/impacto. PRs y sugerencias bienvenidos.
   con el menú abierto. (Bloqueado por: captura en Wayland.)
 - [ ] **Countdown de reset en vivo** — mostrar "resetea en 2h 15m" en vez de la
   hora fija; más útil de un vistazo.
-- [ ] **Robustez de la extracción de cookie** (ver detalle abajo) — soportar más
-  navegadores y backends de keyring. **← en progreso (rama `feat/cookie-multi-browser`)**
+- [~] **Robustez de la extracción de cookie** (ver detalle abajo) — soportar más
+  navegadores y backends de keyring. **← rama `feat/cookie-multi-browser`**
 
 ### Detalle: extracción de cookie multi-navegador
 
-Hoy `chrome_cookies.py` asume **Chrome + GNOME Keyring (libsecret)**. Falta:
+El módulo `browser_cookies.py` ya generaliza la extracción (`chrome_cookies.py`
+quedó como shim). Estado:
 
-- [ ] Probar de verdad **Brave / Chromium / Edge** (los paths ya están listados
-  en `COOKIE_GLOBS` pero sin testear; cada navegador usa su propia entrada de
-  keyring: "Brave Safe Storage", "Chromium Safe Storage", etc.).
+- [x] **Chrome / Chromium / Brave / Edge**: misma lógica AES, con
+  **autodetección de la clave** (prueba passwords candidatas del keyring hasta
+  que el `sessionKey` descifrado empieza con `sk-ant-sid`).
+- [x] **Firefox** (incluido snap/flatpak): lee `moz_cookies` en texto plano.
+- [x] `--password-store=basic` (clave fija `peanuts`) como fallback.
+- [x] **Elegir navegador** explícito: config `browser` o flag `--browser`;
+  `--list-browsers` para ver qué detecta.
+- [x] Mensajes de error por caso (no hay cookies / no logueado / no se pudo
+  descifrar / navegador no soportado).
+- [x] Tests con SQLite mockeado (Firefox plano + Chromium cifrado).
+- [x] Selección de **perfil** dentro de un navegador (config `profile` / flag
+  `--profile`, match exacto o substring; `--list-browsers` lista todos).
+- [ ] Probar Brave/Edge en una máquina real (hoy solo verificado Chrome+Firefox).
 - [ ] Soportar **KDE / kwallet** como backend de la clave (no solo libsecret).
-- [ ] Soportar `--password-store=basic` (clave fija `peanuts`, ya hay fallback
-  parcial) y detectar cuál corresponde sin adivinar.
-- [ ] Permitir **elegir el navegador/perfil** explícitamente (config o flag),
-  para máquinas con varios perfiles o varios navegadores logueados.
-- [ ] Mensajes de error claros por caso (no hay cookies / no logueado / keyring
-  bloqueado / navegador no soportado).
-- [ ] Tests con un SQLite de cookies mockeado y valores cifrados de ejemplo.
 
 ## Calidad / distribución
 

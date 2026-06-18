@@ -3,5 +3,8 @@
   "warn": 80,
   "crit": 90,
   "notifications": true,
-  "auto_grab_on_expiry": true
+  "auto_grab_on_expiry": true,
+  "browser": null,
+  "profile": null,
+  "bar_metric": "session"
 }

@@ -14,9 +14,10 @@ Dependencias del sistema (Ubuntu 24.04):
 Dependencias pip (--user): curl_cffi
 
 Uso:
-    claude_usage_bar.py            # corre el indicador
-    claude_usage_bar.py --once     # imprime el uso actual y sale (debug)
-    claude_usage_bar.py --grab     # extrae la cookie de Chrome y sale
+    claude_usage_bar.py                                  # corre el indicador
+    claude_usage_bar.py --once                           # imprime el uso y sale (debug)
+    claude_usage_bar.py --grab [--browser X] [--profile P]  # extrae la cookie y sale
+    claude_usage_bar.py --list-browsers                  # navegadores/perfiles detectados
     claude_usage_bar.py --version
 """
 
@@ -48,7 +49,7 @@ import datetime as dt
 # challenge de Cloudflare de claude.ai (requests normal recibe 403).
 from curl_cffi import requests as creq
 
-import chrome_cookies
+import browser_cookies
 
 __version__ = "1.1.0"
 
@@ -71,7 +72,10 @@ DEFAULTS = {
     "warn": 80,                    # umbral amarillo
     "crit": 90,                    # umbral rojo
     "notifications": True,         # avisar al cruzar warn/crit
-    "auto_grab_on_expiry": True,   # re-extraer cookie de Chrome si expira
+    "auto_grab_on_expiry": True,   # re-extraer cookie del navegador si expira
+    "browser": None,               # None = autodetectar; o "chrome"/"chromium"/"firefox"/...
+    "profile": None,               # None = perfil más reciente; o nombre/substring del perfil
+    "bar_metric": "session",       # qué % muestra la barra: "session" o "highest"
 }
 
 
@@ -341,7 +345,7 @@ class ClaudeUsageBar:
         except AuthError as e:
             self.org = None
             GLib.idle_add(self._error, str(e))
-        except chrome_cookies.ChromeCookieError as e:
+        except browser_cookies.BrowserCookieError as e:
             GLib.idle_add(self._error, f"Cookie: {e}")
         except Exception as e:  # noqa: BLE001
             GLib.idle_add(self._error, f"Error: {e}")
@@ -359,7 +363,7 @@ class ClaudeUsageBar:
             if not CONFIG["auto_grab_on_expiry"]:
                 raise
             # un solo reintento re-extrayendo la cookie de Chrome
-            cookie = chrome_cookies.get_claude_cookie()
+            cookie = browser_cookies.get_claude_cookie(CONFIG["browser"], CONFIG["profile"])
             self.cookie = cookie
             self.org = None
             try:
@@ -395,11 +399,19 @@ class ClaudeUsageBar:
             if util >= worst:
                 worst, worst_label = util, labels[key]
 
+        # qué número va en la barra: "session" (default) o "highest"
+        shown, shown_label = worst, worst_label
+        if CONFIG["bar_metric"] == "session" and "session" in windows:
+            shown, shown_label = windows["session"]["util"], labels["session"]
+
         now = dt.datetime.now().strftime("%H:%M")
         self._build_menu(rows, footer=f"Actualizado {now}")
+        # número = métrica elegida; color del ícono = el límite más alto (aviso)
         self._set_icon(status_color(worst))
-        self._set_label(f"{worst:.0f}%")
-        self.indicator.set_title(f"{APP_NAME} — {worst_label} {worst:.0f}%")
+        self._set_label(f"{shown:.0f}%")
+        self.indicator.set_title(
+            f"{APP_NAME} — {shown_label} {shown:.0f}% · máx {worst_label} {worst:.0f}%"
+        )
         self._maybe_notify(worst, worst_label)
         return False
 
@@ -451,7 +463,7 @@ class ClaudeUsageBar:
 
     def _grab_chrome_worker(self):
         try:
-            cookie = chrome_cookies.get_claude_cookie()
+            cookie = browser_cookies.get_claude_cookie(CONFIG["browser"], CONFIG["profile"])
             self.cookie = cookie
             self.org = None
             try:
@@ -459,7 +471,7 @@ class ClaudeUsageBar:
             except Exception as e:  # noqa: BLE001
                 print("No se pudo guardar en keyring:", e)
             GLib.idle_add(self._tick)
-        except chrome_cookies.ChromeCookieError as e:
+        except browser_cookies.BrowserCookieError as e:
             GLib.idle_add(self._error, str(e))
         except Exception as e:  # noqa: BLE001
             GLib.idle_add(self._error, f"Chrome: {e}")
@@ -553,16 +565,39 @@ def cli_once():
     return 0
 
 
-def cli_grab():
-    """Extrae la cookie de Chrome, la guarda y sale."""
+def cli_grab(browser=None, profile=None):
+    """Extrae la cookie del navegador, la guarda y sale."""
     try:
-        cookie = chrome_cookies.get_claude_cookie()
-    except chrome_cookies.ChromeCookieError as e:
-        print("No se pudo extraer la cookie de Chrome:", e)
+        cookie = browser_cookies.get_claude_cookie(
+            browser or CONFIG["browser"], profile or CONFIG["profile"]
+        )
+    except browser_cookies.BrowserCookieError as e:
+        print("No se pudo extraer la cookie:", e)
         return 5
     save_cookie(cookie)
     print(f"Cookie guardada ({len(cookie.split(';'))} cookies).")
     return 0
+
+
+def cli_list_browsers():
+    """Lista los navegadores/perfiles detectados y si tienen sesión de claude.ai."""
+    sources = browser_cookies.list_sources()
+    if not sources:
+        print("No detecté ningún navegador con base de cookies.")
+        return 6
+    for s in sources:
+        print(f"{s['browser']:9s} {s['profile']:24s} {s['status']:42s} {s['db']}")
+    return 0
+
+
+def _arg_value(args, name):
+    """Lee --name=valor o '--name valor'."""
+    for i, a in enumerate(args):
+        if a == name and i + 1 < len(args):
+            return args[i + 1]
+        if a.startswith(name + "="):
+            return a.split("=", 1)[1]
+    return None
 
 
 def main():
@@ -570,10 +605,12 @@ def main():
     if "--version" in args:
         print(f"{APP_NAME} {__version__}")
         return 0
+    if "--list-browsers" in args:
+        return cli_list_browsers()
     if "--once" in args:
         return cli_once()
     if "--grab" in args:
-        return cli_grab()
+        return cli_grab(_arg_value(args, "--browser"), _arg_value(args, "--profile"))
 
     lock = acquire_single_instance()
     if lock is None:
