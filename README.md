@@ -124,11 +124,32 @@ claude-usage-bar --version
 ./uninstall.sh   # cierra la app, quita autostart/lanzador y borra la cookie del keyring
 ```
 
+## Compatibilidad — qué anda y qué no
+
+**✅ Probado / soportado**
+- **Ubuntu 24.04 / GNOME 46 (Wayland)** con la extensión `ubuntu-appindicators`
+  (viene activada por defecto). Es el entorno donde está testeado de punta a punta.
+- **Auto-grab de cookie desde Chrome y Firefox** (Firefox incluido el snap).
+- Configuración manual de cookie: funciona en **cualquier** distro/escritorio.
+
+**⚠️ Debería andar, pero no está probado**
+- **Otros escritorios** (KDE, XFCE, etc.): el indicador funciona mientras haya
+  soporte de AppIndicator/KStatusNotifierItem (en KDE puede requerir activarlo).
+- **Auto-grab desde Chromium / Brave / Edge**: el código está, pero verificado
+  solo en Chrome y Firefox.
+
+**❌ Todavía NO soportado (ver [`ROADMAP.md`](ROADMAP.md))**
+- **KDE / kwallet**: si Chrome guardó su clave en kwallet (no en libsecret/GNOME
+  Keyring), el auto-grab no la encuentra. Workaround: cargá la cookie a mano.
+- **Distros sin `apt`** (Fedora, Arch, etc.): `install.sh` instala dependencias
+  solo con `apt`. La app funciona igual, pero tenés que instalar las
+  dependencias del sistema a mano (PyGObject, GTK3, AyatanaAppIndicator3,
+  libsecret, libnotify) + `curl_cffi` por pip.
+- **Empaquetado** (.deb / AppImage / PyPI): por ahora se instala clonando el repo.
+
 ## Notas
 
-- Probado en Ubuntu 24.04 / GNOME 46 (Wayland) con la extensión
-  `ubuntu-appindicators` (viene activada por defecto).
-- En otros escritorios (KDE, XFCE) funciona igual mientras haya soporte de
-  AppIndicator/KStatusNotifierItem.
 - Si el endpoint cambia los nombres de los campos, el parser ya contempla varios
   alias (`five_hour`/`session`, `seven_day`/`weekly`, etc.).
+- La cookie de sesión expira cada tanto; con `auto_grab_on_expiry` la app la
+  renueva sola desde el navegador (mientras siga logueado).
