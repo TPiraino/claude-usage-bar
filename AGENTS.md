@@ -15,7 +15,8 @@ Autenticación por cookie de sesión de claude.ai.
 | Archivo | Rol |
 |---|---|
 | `claude_usage_bar.py` | App principal: indicator GTK + polling + menú |
-| `chrome_cookies.py` | Extrae y descifra las cookies de claude.ai desde Chrome |
+| `browser_cookies.py` | Extrae las cookies de claude.ai (Chrome/Chromium/Brave/Edge/Firefox) |
+| `chrome_cookies.py` | Shim de compatibilidad → `browser_cookies` |
 | `icons/claude-usage-*.svg` | Ícono "spark" de Claude en 5 colores de estado |
 | `install.sh` | Instala deps pip, crea lanzador y autostart |
 
@@ -87,10 +88,14 @@ En tiempo de ejecución, el usuario también puede usar el menú →
 La forma más rápida es el CLI integrado:
 
 ```bash
-python3 ./claude_usage_bar.py --once     # imprime cada ventana y su % (exit 0 = OK)
-python3 ./claude_usage_bar.py --grab      # extrae+guarda la cookie de Chrome
+python3 ./claude_usage_bar.py --once            # imprime cada ventana y su % (exit 0 = OK)
+python3 ./claude_usage_bar.py --grab [--browser X]  # extrae+guarda la cookie del navegador
+python3 ./claude_usage_bar.py --list-browsers   # navegadores detectados + estado
 python3 ./claude_usage_bar.py --version
 ```
+
+Para tests del módulo de cookies (no tocan keyring/navegadores reales):
+`python3 -m unittest tests.test_browser_cookies -v`
 
 Códigos de salida de `--once`: `0` OK · `2` sin cookie · `3` cookie expirada
 (probá `--grab`) · `4` respuesta sin datos.

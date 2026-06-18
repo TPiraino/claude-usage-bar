@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased (rama `feat/cookie-multi-browser`)
+
+- **Extracción de cookie multi-navegador** (`browser_cookies.py`):
+  - Chrome / Chromium / Brave / Edge: descifrado AES con **autodetección de la
+    clave** (prueba passwords del keyring hasta que el `sessionKey` valida).
+  - Firefox (incluido snap/flatpak): lee `moz_cookies` en texto plano.
+  - Fallback `--password-store=basic` (clave `peanuts`).
+- Config `browser` + flags `--browser` y `--list-browsers`.
+- `chrome_cookies.py` queda como shim de compatibilidad.
+- Tests (`tests/test_browser_cookies.py`) con SQLite mockeado.
+
 ## 1.1.0
 
 - **Re-extracción automática de la cookie** cuando expira (401/403): si Chrome

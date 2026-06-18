@@ -68,9 +68,16 @@ claude-usage-bar
 ## Configurar la cookie
 
 **Opción fácil (automática):** click en el ícono → **🍪 Traer cookie de Chrome**.
-La app lee y descifra la cookie de claude.ai directamente de tu Chrome (de su
-base SQLite, usando la clave del GNOME Keyring) y queda configurada sola.
-Repetí esto cuando la cookie expire (ícono gris con `!`).
+La app lee la cookie de claude.ai directamente de tu navegador y queda
+configurada sola. Soporta:
+
+- **Chrome / Chromium / Brave / Edge**: descifra la cookie de su base SQLite
+  usando la clave del keyring (autodetectada).
+- **Firefox** (incluido el snap de Ubuntu): la lee en texto plano de `cookies.sqlite`.
+
+Por defecto **autodetecta** el navegador que tenga sesión activa. Para fijar uno,
+poné `"browser": "firefox"` en la config. Para ver qué detecta:
+`claude-usage-bar --list-browsers`.
 
 **Opción manual:** click en el ícono → **Configurar cookie manualmente** →
 en el navegador logueado en claude.ai, `F12` → **Application** → **Cookies** →
@@ -86,15 +93,19 @@ Creá `~/.config/claude-usage-bar/config.json` (ver [`config.example.json`](conf
   "warn": 80,
   "crit": 90,
   "notifications": true,
-  "auto_grab_on_expiry": true
+  "auto_grab_on_expiry": true,
+  "browser": null
 }
 ```
+
+`browser`: `null` autodetecta; o `"chrome"` / `"chromium"` / `"brave"` / `"edge"` / `"firefox"`.
 
 ## CLI
 
 ```bash
-claude-usage-bar --once      # imprime el uso actual y sale
-claude-usage-bar --grab      # extrae la cookie de Chrome y la guarda
+claude-usage-bar --once               # imprime el uso actual y sale
+claude-usage-bar --grab [--browser X] # extrae la cookie del navegador y la guarda
+claude-usage-bar --list-browsers      # navegadores detectados + estado de sesión
 claude-usage-bar --version
 ```
 
